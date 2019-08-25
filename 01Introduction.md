@@ -63,3 +63,22 @@ import panda as pd
 
 pd.Timestamp(1550764800000, unit='ms') # Timestamp('2019-02-21 16:00:00')
 ```
+
+## Get Recent equity
+
+原则上来讲，可以通过[上一节](#get-one-fund-details)计算得到
+
+通过F12/Network分析[阶段涨幅](http://fundf10.eastmoney.com/jdzf_001956.html)得到接口: `http://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jdzf&code=001956`
+
+或者分析[163基金](http://quotes.money.163.com/fund/001956.html)通过HTML获取数据
+
+```py
+import requests
+import re
+
+r=requests.get('http://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jdzf&code=001956')
+pat=re.compile(r'>(---|-?\d+\.\d+%)</li><li')
+
+data=pat.findall(r.text)
+len(data)
+```
