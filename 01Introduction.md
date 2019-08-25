@@ -36,9 +36,9 @@ Notes:
 import requests
 import re
 
-# All单位净值走势
+# All单位净值走势: 分别对应timestamp, 单位净值，涨跌幅
 pat_equity=re.compile(r'(\d+),"y":(\d+.\d+),"equityReturn":(\d+|-?\d+.\d+),')
-# All同类排名走势
+# All同类排名走势: 分别对应timestamp, 排名，同类基金数目
 pat_rate=re.compile(r'(\d+),"y":(\d+),"sc":"(\d+)')
 # 基金经理业绩评价 ['选股能力', '收益率', '抗风险', '稳定性','择时能力']
 pat_performance=re.compile(r'(\d+\.\d+),(\d+\.\d+),(\d+\.\d+),(\d+\.\d+),(\d+\.\d+)\],"jzrq')
@@ -54,4 +54,12 @@ performance=pat_performance.search(res.text).groups()
 len(equity)
 len(rate)
 len(performance)
+```
+
+example: from timestamp to date
+
+```py
+import panda as pd
+
+pd.Timestamp(1550764800000, unit='ms') # Timestamp('2019-02-21 16:00:00')
 ```
