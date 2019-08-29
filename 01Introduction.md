@@ -82,3 +82,79 @@ pat=re.compile(r'>(---|-?\d+\.\d+%)</li><li')
 data=pat.findall(r.text)
 len(data)
 ```
+
+example: buy or sell fund suggestion
+
+```py
+import requests
+import smtplib
+from email.mime.text import MIMEText
+import schedule
+import time
+
+
+def get_codes():
+    # read file
+    with open('fund_list.txt') as file:
+        return file.read().split('\n')
+
+
+def generate_report(funds_code):
+    # scrab data
+    report_buy = []
+    report_sell = []
+    for fund in funds_code:
+        r = requests.get(f'http://fundgz.1234567.com.cn/js/{fund}.js')
+        prediction = eval(r.text[8:-2])
+        if eval(prediction['gszzl']) < 0:
+            report_buy.append(
+                f"{prediction['fundcode']}, {prediction['name']}, {prediction['gszzl']}")
+        else:
+            report_sell.append(
+                f"{prediction['fundcode']}, {prediction['name']}, {prediction['gszzl']}")
+
+    # generate report
+    return '大盘预测跌(建议买入):\n'+'%\n'.join(report_buy) + \
+        '%\n\n大盘预测涨(建议抛售):\n'+'%\n'.join(report_sell)+'%'
+
+
+def send_mail(report):
+    sender = 'gewei@pku.edu.cn'
+    receivers = ['gewei@pku.edu.cn', ]
+
+    msg = MIMEText(report)
+    msg['From'] = f'Wei Ge<{sender}>'  # Wei Ge表示显示的名字
+    msg['To'] = ';'.join(receivers)
+    msg['Subject'] = f"Fund Report: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+
+    try:
+        mail_server = smtplib.SMTP()
+        mail_server.connect('mail.pku.edu.cn', 25)
+
+        user_name = sender
+        user_pwd = 'xxxxxx'
+        mail_server.login(user_name, user_pwd)
+
+        mail_server.sendmail(sender, receivers, msg.as_bytes())
+    except Exception as e:
+        print('send mail failed:', e)
+    else:
+        print(f"send mail success! at{time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+
+def task():
+    funds_code = get_codes()
+    report = generate_report(funds_code)
+    send_mail(report)
+
+
+schedule.every().monday.at("14:50").do(task)
+schedule.every().tuesday.at("14:50").do(task)
+schedule.every().wednesday.at("14:50").do(task)
+schedule.every().thursday.at("14:50").do(task)
+schedule.every().friday.at("14:50").do(task)
+
+while True:
+    schedule.run_pending()
+    time.sleep(1)
+```
