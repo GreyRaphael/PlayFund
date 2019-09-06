@@ -1,6 +1,6 @@
 # Fund Introduction
 
-## Get All Funds code
+example: get all funds info(fund_code, fund_name, fund_type)
 
 ```py
 # in JupyterLab test
@@ -12,13 +12,50 @@ funds_list=eval(funds_jsobj)
 funds_df=pd.DataFrame(funds_list)
 
 funds_df.to_csv('all_funds.csv', index=False, header=False)
+# then import the csv to MySQL
 funds_df.loc[funds_df[0]=='001719']
 
 df=pd.read_csv('all_funds.csv',dtype=str, header=None)
 df.loc[df[0]=='001719']
 ```
 
-## Get one fund details
+example: filter funds that cannot be bought
+
+```py
+# in JupyterLab test
+import mysql.connector
+import requests
+
+# Connect to server
+cnx = mysql.connector.connect(host="127.0.0.1", port=3306, db='Fund', user="root",password="xxxxxxxxxxx")
+cur = cnx.cursor()
+
+def get_codes():
+    # read from db
+    cur.execute('SELECT fund_code FROM FundInfo')
+    funds = cur.fetchall()
+    return list(*zip(*funds))
+
+close_funds=[]
+
+fund_codes=get_codes()
+for code in fund_codes:
+    r=requests.get(f'http://fundf10.eastmoney.com/jjfl_{code}.html')
+    try:
+        status = r.text.find('btn-red')
+        if status == -1:
+            close_funds.append(code)
+    except Exception as e:
+        print(code, e)
+
+with open('closed_funds.txt', 'w') as file:
+    for line in close_funds:
+        file.write(line)
+        file.write('\n')
+# then import the .txt to MySQL
+```
+
+example: get one fund details
 
 通过F12/Network在[001956](http://fund.eastmoney.com/001956.html)获取基金接口: `http://fund.eastmoney.com/pingzhongdata/001956.js`
 > 如本目录下001956.js文件所示的结构
@@ -64,7 +101,7 @@ import panda as pd
 pd.Timestamp(1550764800000, unit='ms') # Timestamp('2019-02-21 16:00:00')
 ```
 
-## Get Recent equity
+example: get recent equity
 
 原则上来讲，可以通过[上一节](#get-one-fund-details)计算得到
 
@@ -84,7 +121,7 @@ data=pat.findall(r.text)
 len(data)
 ```
 
-example: buy or sell fund suggestion
+example: **buy or sell fund suggestion**
 
 ```py
 import requests
