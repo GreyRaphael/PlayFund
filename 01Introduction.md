@@ -277,3 +277,47 @@ UPDATE FundInfo
 INNER JOIN QDII ON FundInfo.code=QDII.code
 SET FundInfo.type='QDII'
 ```
+
+example: 下载包含所有基金费率的htmls
+
+```py
+import mysql.connector
+import requests
+import random
+import concurrent.futures
+
+# Connect to server
+cnx = mysql.connector.connect(host="127.0.0.1", port=3306, db='THS_Fund', user="root",password="xxxxxx")
+cur = cnx.cursor()
+
+def get_codes():
+    # read from db
+    cur.execute('SELECT code FROM FundInfo')
+    funds = cur.fetchall()
+    return list(*zip(*funds))
+
+def get_proxies():
+    with open('proxy_list.txt') as file:
+        return eval(file.read())
+
+proxies_list=get_proxies()
+fund_list=get_codes()
+
+s = requests.Session()
+s.headers.update({'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:69.0) Gecko/20100101 Firefox/69.0"})
+
+def download_data(code):
+    proxies = {'https': random.choice(proxies_list),}
+    try:
+        r = s.get(f'http://fund.10jqka.com.cn/{code}/interduce.html#rates').content
+        with open(f'Data/{code}.html', 'wb') as file:
+            file.write(r)
+    except Exception as e:
+        print(code, e)
+        with open('log.txt', 'a') as file:
+            file.write(code)
+            file.write('\n')
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
+    infodict_futures = [executor.submit(download_data, code) for code in fund_list]
+```
