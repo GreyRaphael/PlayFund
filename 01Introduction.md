@@ -1,6 +1,7 @@
 # Fund Introduction
 
 example: get all funds info(fund_code, fund_name, fund_type)
+> 大量的无效的基金，难以处理
 
 ```py
 # in JupyterLab test
@@ -17,6 +18,65 @@ funds_df.loc[funds_df[0]=='001719']
 
 df=pd.read_csv('all_funds.csv',dtype=str, header=None)
 df.loc[df[0]=='001719']
+```
+
+example: get funds that can be bought from [同花顺](http://fund.10jqka.com.cn/datacenter/sy/)
+
+```py
+import requests
+import pandas as pd
+
+r_all=requests.get('http://fund.ijijin.cn/data/Net/info/all_F009_desc_0_0_1_9999_0_0_0_jsonp_g.html')
+r_qdii=requests.get('http://fund.ijijin.cn/data/Net/info/QDII_F009_desc_0_0_1_9999_0_0_0_jsonp_g.html')
+r_zsx=requests.get('http://fund.ijijin.cn/data/Net/info/zsx_F009_desc_0_0_1_9999_0_0_0_jsonp_g.html')
+
+info_list=[r_all.text, r_qdii.text, r_zsx.text]
+
+null=None # for below eval() error
+summary=[]
+for info in info_list:
+    temp=eval(info[2:-1])['data']['data']
+    print(len(temp))
+    summary.append(temp)
+
+# summary[0]['f501009']
+df_all=pd.DataFrame(summary[0]).T # 7767
+df_all_buy=df_all.loc[df_all['buy']=='1'] # 4621
+# df_all_buy.to_csv('ths_buy.csv')
+
+df_qdii=pd.DataFrame(summary[1]).T # 264
+df_qdii_buy=df_qdii.loc[df_qdii['buy']=='1'] # 160
+# df_qdii_buy.to_csv('qdii_buy.csv')
+
+df_zsx=pd.DataFrame(summary[2]).T # 1088
+df_zsx_buy=df_zsx.loc[df_zsx['buy']=='1'] # 665
+# df_zsx_buy.to_csv('zsx_buy.csv')
+
+# df_all_buy.loc[df_all_buy['type']=='QDII'].shape # (31, 32)
+# df_qdii_buy.shape # (160, 32)
+# 这里产生矛盾
+# e.g. 如下结果不一致
+# df_qdii_buy.loc[df_qdii_buy['code']=='162411']
+# df_all_buy.loc[df_all_buy['code']=='162411']
+# 先导出为csv, 然后利用navicat导入MySQL，然后利用sql语法将QDII和指数型给all进行修改
+```
+
+```sql
+DELETE FROM FundInfo
+WHERE FundInfo.type='bbx'
+
+SELECT COUNT(*) FROM FundInfo
+
+SELECT * FROM FundInfo
+WHERE FundInfo.type='QDII'
+
+UPDATE FundInfo
+INNER JOIN IndexFund ON FundInfo.code=IndexFund.code
+SET FundInfo.type='zsx'
+
+UPDATE FundInfo
+INNER JOIN QDII ON FundInfo.code=QDII.code
+SET FundInfo.type='QDII'
 ```
 
 example: filter funds that cannot be bought
