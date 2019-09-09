@@ -281,6 +281,31 @@ SET FundInfo.type='QDII'
 example: 下载包含所有基金费率的htmls
 
 ```py
+import re
+import requests
+
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; WOW64; rv:61.0) Gecko/20100101 Firefox/61.0",
+}
+session = requests.Session()
+
+home_url='http://www.xsdaili.com'
+pat0=re.compile(r'<a href="/dayProxy/ip/(\d+)\.html">')
+res0=session.get(home_url, headers=headers)
+url=f'http://www.xsdaili.com/dayProxy/ip/{pat0.search(res0.text)}.html'
+
+res=session.get(url, headers=headers)
+pat=re.compile(r'(\d+\.\d+\.\d+\.\d+:\d+)@(\w+)#')
+all_ip_port=pat.findall(res.text)
+
+all_addr=[]
+for item in all_ip_port:
+    all_addr.append(f'{item[1]}://{item[0]}')
+
+print(sorted(all_addr))
+```
+
+```py
 import mysql.connector
 import requests
 import random
