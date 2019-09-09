@@ -321,3 +321,135 @@ def download_data(code):
 with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
     infodict_futures = [executor.submit(download_data, code) for code in fund_list]
 ```
+
+exmple: 利用下载的htmls来提取卖出费率
+
+```py
+import re
+import os
+import json
+
+pat=re.compile(r'(\d+)[\u4e00-\u9fa5\\(\)]+</li>\r\n                            <li class="" style="width:270px;">([\d\.]+)%')
+
+def filter_feilv(feilv_list):
+    for i, f in enumerate(feilv_list):
+        if f[0] == '7':
+            return feilv_list[i:]
+
+bad_funds=[]
+feilv={}
+for html in os.listdir('Data'):
+    with open(f'Data/{html}', 'rb') as file:
+        txt=file.read().decode('utf8', errors='ignore')
+        if txt:
+            feilv_list=filter_feilv(pat.findall(txt))
+            feilv[html[:-5]]=feilv_list
+        else:
+            bad_funds.append(html[:-5])
+
+temp_funds=[k for k in feilv if not feilv[k]]]
+
+len(bad_funds) # 47
+len(temp_funds) # 82
+
+len(feilv) # 4571
+for code in temp_funds:
+    del feilv[code]
+len(feilv) # 4489
+
+new_feilv={}
+for k in feilv:
+    v=feilv[k]
+    zv=list(zip(*v))
+    try:
+        new_v=list(map(list, zip(zv[0][:-1], zv[1][1:])))
+        for t in new_v:
+            if t[0]=='1':
+                t[0]='365'
+            elif t[0]=='2':
+                t[0]='730'
+            elif t[0]=='3':
+                t[0]='1095'
+            elif t[0]=='4':
+                t[0]='1460'
+            elif t[0]=='5':
+                t[0]='1825'  
+        new_feilv[k]=new_v
+    except Exception as e:
+        print(k, e)
+
+
+with open('data.txt', 'w') as file:
+    for k in new_feilv:
+        file.write(k)
+        file.write(';')
+        file.write(json.dumps(new_feilv[k]))
+        file.write('\n')
+```
+
+```py
+import re
+
+pat=re.compile(r'(\d+)[\u4e00-\u9fa5\\(\)]+</li>\r\n                            <li class="" style="width:270px;">([\d\.]+)%')
+
+high_fee={}
+def filter_fee(fee_list):
+    for i, f in enumerate(fee_list):
+        if f[0] in ['1','15', '30', '180']:
+            return fee_list[i:]
+
+def filter_file(code):
+    with open(f'Data/{code}.html', 'rb') as file:
+        txt=file.read().decode('utf8', errors='ignore')
+        high_fee[code]=filter_fee(pat.findall(txt))
+
+zero_fee={}
+with open('temp_funds.txt') as file:
+    for line in file:
+        code, status=line.split(',')
+        if status == '0\n':
+            zero_fee[code]='0.00'
+        elif status =='apply\n':
+            filter_file(code)
+
+# len(temp_funds) 
+# 82: 28+47+7, 其中7中包含5个坏数据和2个好数据: 217022, 217023
+# 加上之前的4489个好数据，总共4489+28+47+2=4566个好数据
+len(zero_fee) # 28
+len(high_fee) # 47
+
+new_high_fee={}
+for k in high_fee:
+    v=high_fee[k]
+    zv=list(zip(*v))
+    try:
+        new_v=list(map(list, zip(zv[0][:-1], zv[1][1:])))
+        for t in new_v:
+            if t[0]=='1':
+                t[0]='365'
+            elif t[0]=='2':
+                t[0]='730'
+            elif t[0]=='3':
+                t[0]='1095'
+            elif t[0]=='4':
+                t[0]='1460'
+            elif t[0]=='5':
+                t[0]='1825'  
+        new_high_fee[k]=new_v
+    except Exception as e:
+        print(k, e)
+
+with open('data.txt', 'a') as file:
+    for k in new_high_fee:
+        file.write(k)
+        file.write(';')
+        file.write(json.dumps(new_high_fee[k]))
+        file.write('\n')
+
+with open('data.txt', 'a') as file:
+    for k in zero_fee:
+        file.write(k)
+        file.write(';')
+        file.write(zero_fee[k])
+        file.write('\n')
+```
