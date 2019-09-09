@@ -404,6 +404,7 @@ def filter_file(code):
         high_fee[code]=filter_fee(pat.findall(txt))
 
 zero_fee={}
+# temp_funds.txt经过了人工分析
 with open('temp_funds.txt') as file:
     for line in file:
         code, status=line.split(',')
