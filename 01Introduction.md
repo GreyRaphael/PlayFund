@@ -4,6 +4,7 @@
   - [Fund knowledge](#fund-knowledge)
   - [TianTian Fund](#tiantian-fund)
   - [Tonghuashun Funds](#tonghuashun-funds)
+  - [Ant Funds](#ant-funds)
 
 ## Fund knowledge
 
@@ -506,4 +507,137 @@ len(Ant_Funds) # 4340
 
 df=pd.DataFrame(Ant_funds)
 df.to_csv('AntFunds.csv', columns=['fundCode', 'fundName'], index=False, header=False)
+```
+
+example: complete auto by AntFortune data
+
+```py
+import mysql.connector
+import requests
+import smtplib
+from email.mime.text import MIMEText
+import time
+import concurrent.futures
+import re
+import schedule
+
+
+def get_codes():
+    cnx = mysql.connector.connect(host="127.0.0.1", port=3306, db='AntFund', user="root",password="xxxxxx")
+    cur = cnx.cursor()
+    cur.execute(
+        '''
+        SELECT ChosenFunds.fund_code, FundInfo.productID, FundInfo.name
+        FROM ChosenFunds
+        LEFT JOIN FundInfo
+        ON ChosenFunds.fund_code=FundInfo.`code`
+        '''
+    )
+    fund_list = cur.fetchall()
+    cnx.close()
+    return fund_list
+
+
+pat=re.compile(r'"csrf":"(.+?)",')
+true=True
+
+def scrab_data(code, productID, name):
+    s=requests.Session()
+    r=s.get(f'https://www.fund123.cn/matiaria?fundCode={code}').text
+    
+    csrf=pat.search(r).group(1)
+    today_string=time.strftime('%Y-%m-%d')
+    post_data={
+        'endTime': today_string,
+        'format': 'true',
+        'limit': 200,
+        'productId': productID,
+        'source': "WEALTHBFFWEB",
+        'startTime': today_string
+    }
+    r_j=s.post(f'https://www.fund123.cn/api/fund/queryFundEstimateIntraday?_csrf={csrf}', json=post_data).text
+    forecast_data=eval(r_j)['list'][-1]
+    forecast_data['code']=code
+    forecast_data['name']=name
+    return forecast_data
+
+def get_data(fund_code_list):
+    # scrab data by threadpool
+    with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
+        infodict_futures = [executor.submit(scrab_data, *item) for item in fund_code_list]
+        return [f.result() for f in infodict_futures]
+
+def evaluate_data(info_dicts):
+    to_buy = []
+    to_sell = []
+    for info in info_dicts:
+        growth_rate = eval(info['forecastGrowth'])
+        info['forecastGrowth']=growth_rate*100
+        if growth_rate < -0:
+            to_buy.append({key:info[key] for key in ['code', 'name', 'forecastGrowth']})
+        elif growth_rate > 0:
+            to_sell.append({key:info[key] for key in ['code', 'name', 'forecastGrowth']})
+    return to_buy, to_sell
+
+
+def generate_report(to_buy, to_sell):
+    # sort data
+    report_buy = sorted(to_buy, key=lambda d: d['forecastGrowth'])
+    report_sell = sorted(to_sell, key=lambda d: d['forecastGrowth'], reverse=True)
+    # string the data
+    report_buy = [
+        f"{d['code']}, {d['name']}, {d['forecastGrowth']:.3f}" for d in report_buy]
+    report_sell = [
+        f"{d['code']}, {d['name']}, {d['forecastGrowth']:.3f}" for d in report_sell]
+    # generate report
+    return '大盘预测跌(建议买入):\n'+'%\n'.join(report_buy) + \
+        '%\n\n大盘预测涨(建议抛售):\n'+'%\n'.join(report_sell)+'%'
+
+
+def send_mail(report):
+    cnx = mysql.connector.connect(host="127.0.0.1", port=3306, db='AntFund', user="root",password="xxxxxx")
+    cur = cnx.cursor()
+    cur.execute('SELECT email FROM UserInfo')
+    receivers = list(*zip(*cur.fetchall()))
+    cnx.close()
+    
+    sender = 'gewei@pku.edu.cn'
+
+    msg = MIMEText(report)
+    msg['From'] = f'Wei Ge<{sender}>'  # Wei Ge表示显示的名字
+    msg['To'] = ';'.join(receivers)
+    msg['Subject'] = f"Fund Report: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+
+    try:
+        mail_server = smtplib.SMTP_SSL('mail.pku.edu.cn', 465)
+
+        user_name = sender
+        user_pwd = 'Grey631331'
+        mail_server.login(user_name, user_pwd)
+
+        mail_server.sendmail(sender, receivers, msg.as_bytes())
+    except Exception as e:
+        print('send mail failed:', e)
+    else:
+        print(f"send mail success! at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+
+def task():
+    fund_list=get_codes()
+    forecast_dicts=get_data(fund_list)
+    to_buy, to_sell=evaluate_data(forecast_dicts)
+    report=generate_report(to_buy, to_sell)
+    send_mail(report)
+
+
+task_clock = "14:50"
+schedule.every().monday.at(task_clock).do(task)
+schedule.every().tuesday.at(task_clock).do(task)
+schedule.every().wednesday.at(task_clock).do(task)
+schedule.every().thursday.at(task_clock).do(task)
+schedule.every().friday.at(task_clock).do(task)
+
+while True:
+    schedule.run_pending()
+    time.sleep(1)
 ```
