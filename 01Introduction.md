@@ -479,3 +479,31 @@ with open('data.txt', 'a') as file:
         file.write(zero_fee[k])
         file.write('\n')
 ```
+
+## Ant Funds
+
+example: get all fundinfo
+
+```py
+import requests
+import re
+import pandas as pd
+
+pat=re.compile(r',"csrf":"(.+?)",')
+s=requests.Session()
+
+# get csrf
+r=s.get('https://www.fund123.cn/fund')
+csrf=pat.search(r.text).group(1)
+
+true=True
+Ant_Funds=[]
+for i in range(1, 218):
+    res=s.post(f'https://www.fund123.cn/api/fund/queryFundList?_csrf={csrf}', json={'pageNum':i})
+    Ant_Funds.extend(eval(res.text)['valuedatalist']['listData'])
+
+len(Ant_Funds) # 4340
+
+df=pd.DataFrame(Ant_funds)
+df.to_csv('AntFunds.csv', columns=['fundCode', 'fundName'], index=False, header=False)
+```
