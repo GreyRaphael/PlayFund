@@ -481,6 +481,24 @@ with open('data.txt', 'a') as file:
         file.write('\n')
 ```
 
+example: 同花顺涨跌幅估算
+
+```py
+import requests
+
+s=requests.Session()
+s.headers.update({'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:69.0) Gecko/20100101 Firefox/69.0"})
+r=s.get('http://gz-fund.10jqka.com.cn/?module=api&controller=index&action=chart&info=vm_fd_JSZ502&start=1445').text
+
+
+nets=r[-26:-1].split(',')
+net_before=eval(nets[2])
+net_now=eval(nets[1])
+rate=(net_now-net_before)/net_before*100
+
+result=f'{rate:.2f}%'
+```
+
 ## Ant Funds
 
 example: get all fundinfo
