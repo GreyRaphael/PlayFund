@@ -373,7 +373,7 @@ for html in os.listdir('Data'):
         else:
             bad_funds.append(html[:-5])
 
-temp_funds=[k for k in feilv if not feilv[k]]]
+temp_funds=[k for k in feilv if not feilv[k]]
 
 len(bad_funds) # 47
 len(temp_funds) # 82
