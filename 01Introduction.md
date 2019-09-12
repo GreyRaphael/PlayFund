@@ -335,7 +335,7 @@ s.headers.update({'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:69
 def download_data(code):
     proxies = {'https': random.choice(proxies_list),}
     try:
-        r = s.get(f'http://fund.10jqka.com.cn/{code}/interduce.html#rates').content
+        r = s.get(f'http://fund.10jqka.com.cn/{code}/interduce.html#rates', proxies=proxies).content
         with open(f'Data/{code}.html', 'wb') as file:
             file.write(r)
     except Exception as e:
