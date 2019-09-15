@@ -659,3 +659,50 @@ while True:
     schedule.run_pending()
     time.sleep(1)
 ```
+
+example: update all netvalue
+
+```py
+import requests
+import re
+import mysql.connector
+import json
+import concurrent.futures
+
+
+def get_codelist():
+    cnx = mysql.connector.connect(host="127.0.0.1", port=3306, db='AntFund', user="root", password="xxxxxx")
+    cur = cnx.cursor()
+    cur.execute('SELECT code FROM FundInfo')
+    fund_list = cur.fetchall()
+    cnx.close()
+    return [item[0] for item in fund_list]
+
+
+pat_equity = re.compile(r'(\d+),"y":(\d+.\d+),"equityReturn":')
+
+
+def update_netvalues(code):
+    r=requests.get(f'http://fund.eastmoney.com/pingzhongdata/{code}.js').text
+    equity = [(item[0][:-3], item[1]) for item in pat_equity.findall(r)]
+    equity_str = json.dumps(equity)
+    # connct to mysql
+    cnx = mysql.connector.connect(host="127.0.0.1", port=3306, db='AntFund', user="root", password="xxxxxx")
+    cur = cnx.cursor()
+    cur.execute(f"UPDATE NetValue set fundNetValues='{equity_str}' WHERE code={code}")
+    cnx.commit()
+    cnx.close()
+
+def update_all(code_list):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
+        for code in code_list:
+            executor.submit(update_netvalues, code)
+
+def task():
+    code_list = get_codelist() # 4323
+    update_all(code_list)
+    print('update success')
+
+if __name__ == "__main__":
+    task()
+```
