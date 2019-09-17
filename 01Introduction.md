@@ -523,7 +523,7 @@ for i in range(1, 218):
 
 len(Ant_Funds) # 4340
 
-df=pd.DataFrame(Ant_funds)
+df=pd.DataFrame(Ant_Funds)
 df.to_csv('AntFunds.csv', columns=['fundCode', 'fundName'], index=False, header=False)
 ```
 
