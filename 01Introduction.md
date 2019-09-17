@@ -524,7 +524,8 @@ for i in range(1, 218):
 len(Ant_Funds) # 4340
 
 df=pd.DataFrame(Ant_Funds)
-df.to_csv('AntFunds.csv', columns=['fundCode', 'fundName'], index=False, header=False)
+# get fundCode, fundName, productID
+df.to_csv('AntFunds.csv', columns=['fundCode', 'fundName', 'key'], index=False, header=False)
 ```
 
 example: complete auto by AntFortune data
