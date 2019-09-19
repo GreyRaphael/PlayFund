@@ -721,3 +721,267 @@ def get_netvalues(code):
     cur.close()
     return netvalue_list
 ```
+
+example: important auto fund program for linux
+
+```py
+import mysql.connector
+import requests
+import smtplib
+from email.mime.text import MIMEText
+import time
+import concurrent.futures
+import re
+import numpy as np
+from scipy.interpolate import CubicSpline
+from datetime import datetime, timedelta, date
+import schedule
+
+def get_chosen_funds():
+    cnx = mysql.connector.connect(
+        host="127.0.0.1", port=3306, db='AntFund', user="root", password="xxxxxx")
+    cur = cnx.cursor()
+    cur.execute(
+        '''
+        SELECT ChosenFunds.fund_code, FundInfo.productID, FundInfo.name
+        FROM ChosenFunds
+        LEFT JOIN FundInfo
+        ON ChosenFunds.fund_code=FundInfo.`code`
+        '''
+    )
+    fund_list = cur.fetchall()
+    cnx.close()
+    return fund_list
+
+
+pat_csrf = re.compile(r'"csrf":"(.+?)",')
+true = True
+
+
+def scrab_forecast_dict(code, productID, name):
+    s = requests.Session()
+
+    r = s.get(f'https://www.fund123.cn/matiaria?fundCode={code}').text
+    csrf = pat_csrf.search(r).group(1)
+    today_string = time.strftime('%Y-%m-%d')
+    post_data = {
+        'endTime': today_string,
+        'format': 'true',
+        'limit': 200,
+        'productId': productID,
+        'source': "WEALTHBFFWEB",
+        'startTime': today_string
+    }
+    r_j = s.post(
+        f'https://www.fund123.cn/api/fund/queryFundEstimateIntraday?_csrf={csrf}', json=post_data).text
+
+    forecast_dict = eval(r_j)['list'][-1]
+    forecast_dict['code'] = code
+    forecast_dict['name'] = name
+    return forecast_dict
+
+
+def get_forecast_dicts(fund_list):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
+        forecast_futures = [executor.submit(
+            scrab_forecast_dict, *fund) for fund in fund_list]
+        return [f.result() for f in forecast_futures]
+
+
+def get_tradeinfo(code, netvalue_dict, forecastNetValue):
+    # get tradeinfo & fee
+    cnx = mysql.connector.connect(
+        host="127.0.0.1", port=3306, db='AntFund', user="root", password="xxxxxx")
+    cur = cnx.cursor()
+    cur.execute(f'SELECT * FROM TradeInfo WHERE fund_code="{code}"')
+    trade_list = cur.fetchall()
+    cur.execute(f'SELECT * FROM FundFee WHERE code={code}')
+    fee_list = eval(cur.fetchone()[1])
+    cnx.close()
+
+    trade_info = []
+    for t in trade_list:
+        buy_date = t[2]
+        buy_timestamp = f'{time.mktime(buy_date.timetuple()):.0f}000'
+        buy_netvalue = eval(netvalue_dict[buy_timestamp])
+        accumulated_rate = 100*(forecastNetValue/buy_netvalue-1)
+
+        for i, item in enumerate(fee_list):
+            hold_days = date.today()-buy_date
+            day_span = timedelta(days=eval(item[0]))
+            if hold_days < day_span:
+                if i == 0:
+                    trade_info.append(
+                        {'buy_date': buy_date, 'share': t[3], 'feilv': 1.5, 'accumulatedRate': accumulated_rate})
+                else:
+                    trade_info.append({'buy_date': buy_date, 'share': t[3], 'feilv': eval(
+                        fee_list[i-1][1]), 'accumulatedRate': accumulated_rate})
+                break
+            elif i == len(fee_list)-1:
+                trade_info.append(
+                    {'buy_date': buy_date, 'share': t[3], 'feilv': 0, 'accumulatedRate': accumulated_rate})
+    return trade_info
+
+
+pat_netvalue = re.compile(r'(\d+),"y":(\d+.\d+),"equityReturn":')
+
+
+def analyse_dict(forecast_dict):
+    code = forecast_dict['code']
+    forecastNetValue = eval(forecast_dict['forecastNetValue'])
+    forecastGrowthRate = 100*eval(forecast_dict['forecastGrowth'])
+    forecast_dict['forecastNetValue'] = forecastNetValue
+    forecast_dict['forecastGrowth'] = forecastGrowthRate
+
+    # get all netvalues
+    r = requests.get(f'http://fund.eastmoney.com/pingzhongdata/{code}.js').text
+    netvalue_list = pat_netvalue.findall(r)
+
+    # add tradeinfo for one code
+    netvalue_dict = dict(netvalue_list)
+    forecast_dict['tradeinfo'] = get_tradeinfo(
+        code, netvalue_dict, forecastNetValue)
+
+    # get last 14 days netvalues
+    N = 14
+    fortnight_netvalue_list = [eval(item[1]) for item in netvalue_list[-N:]]
+    fortnight_netvalue_array = np.array(fortnight_netvalue_list)
+
+    # add last 3 days growth rate & accumulated growth rate
+    fortnight_growth_rate = 100 * \
+        (fortnight_netvalue_array[1:]/fortnight_netvalue_array[:-1]-1)
+    forecast_dict['last3d'] = f'[{fortnight_growth_rate[-3]:5.2f},{fortnight_growth_rate[-2]:5.2f},{fortnight_growth_rate[-1]:5.2f}]'
+    forecast_dict['accu3d'] = 100 * \
+        (fortnight_netvalue_list[-1]/fortnight_netvalue_list[-4]-1)
+
+    # cubic spline predict today and tomorrow growth rate
+    last_timestamp = eval(netvalue_list[-1][0])//1000
+    forecast_timestamp = forecast_dict['time']//1000
+    delta_days = (datetime.fromtimestamp(forecast_timestamp) -
+                  datetime.fromtimestamp(last_timestamp)).days
+    if delta_days == 0:
+        fortnight_netvalues = fortnight_netvalue_array
+    else:
+        # with forecastNetValue
+        new_fortnight_netvalue_list = fortnight_netvalue_list[1:]
+        new_fortnight_netvalue_list.append(forecastNetValue)
+        fortnight_netvalues = np.array(new_fortnight_netvalue_list)
+    cs = CubicSpline(np.arange(1, N+1), fortnight_netvalues, bc_type='natural')
+    netvalue_interpolate = cs(np.linspace(1, N, 3*N))
+    diff1 = netvalue_interpolate[1:]-netvalue_interpolate[:-1]
+    diff2 = diff1[1:]-diff1[:-1]
+    forecast_dict['diff1'] = 100*diff1[-1]
+    forecast_dict['diff2'] = 100*diff2[-1]
+    # now forecast_dict contains:
+    # time, forecastNetValue, forecastGrowth, code, name, tradeinfo, last3d, accu3d, diff1, diff2
+    return forecast_dict
+
+
+def analyse_dicts(forecast_dicts):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
+        analysed_futures = [executor.submit(
+            analyse_dict, forecast_dict) for forecast_dict in forecast_dicts]
+        return [f.result() for f in analysed_futures]
+
+
+def seperate_dicts(analysed_dicts):
+    to_buy = []
+    to_sell = []
+    to_hold = []
+    for d in analysed_dicts:
+        accu3d = d['accu3d']
+        forecastGrowthRate = d['forecastGrowth']
+        if abs(forecastGrowthRate) < 0.2 and abs((1+accu3d/100)*(1+forecastGrowthRate/100) -1) < 0.01 :
+            to_hold.append(d)
+        elif forecastGrowthRate <= -0.2 or (1+accu3d/100)*(1+forecastGrowthRate/100)-1 < -0.017:
+            to_buy.append(d)
+        elif forecastGrowthRate >= 0.6 or (1+accu3d/100)*(1+forecastGrowthRate/100)-1 > 0.017:
+            to_sell.append(d)
+        else:
+            to_hold.append(d)
+    return to_buy, to_sell, to_hold
+
+
+def generate_report(to_buy, to_sell, to_hold):
+    # sort date
+    report_buy = sorted(to_buy, key=lambda d: d['accu3d'])
+    report_sell = sorted(to_sell, key=lambda d: d['accu3d'], reverse=True)
+    report_hold = sorted(to_hold, key=lambda d: d['forecastGrowth'], reverse=True)
+
+    report_sell_html = [
+        f"<div>{d['code']}|last3d:{d['last3d']},accu3d:<span style='color: #f00'>{d['accu3d']:5.2f}%</span>|predict:<span style='color:#f00'>{d['forecastGrowth']:6.3f}%</span>,diff=({d['diff1']:6.3f},{d['diff2']:6.3f})|{d['name']}</div>" for d in report_sell]
+
+    private_report_sell_html = []
+    for d in report_sell:
+        tradeinfo_list = [
+            f"<div>{t['buy_date']}|share:{t['share']:<7.2f}|feilv:{t['feilv']:4.2f}|{t['accumulatedRate']:5.2f}</div>" for t in d['tradeinfo']]
+        tradeinfo = '\n'.join(tradeinfo_list)
+        private_report_sell_html.append(
+            f"<div>{d['code']}|last3d:{d['last3d']},accu3d:<span style='color:#f00'>{d['accu3d']:5.2f}%</span>|predict:<span style='color:#f00'>{d['forecastGrowth']:6.3f}%</span>,diff=({d['diff1']:6.3f},{d['diff2']:6.3f})|{d['name']}</div><div style='padding-left:80px'>{tradeinfo}</div>")
+
+    # string the data
+    report_buy_html = [
+        f"<div>{d['code']}|last3d:{d['last3d']},accu3d:<span style='color: #0a0'>{d['accu3d']:5.2f}%</span>|predict:<span style='color:#0a0'>{d['forecastGrowth']:6.3f}%</span>,diff=({d['diff1']:6.3f},{d['diff2']:6.3f})|{d['name']}</div>" for d in report_buy]
+    report_hold_html = [
+        f"<div>{d['code']}|last3d:{d['last3d']},accu3d:<span style='color: #00f'>{d['accu3d']:5.2f}%</span>|predict:<span style='color: #00f'>{d['forecastGrowth']:6.3f}%</span>,diff=({d['diff1']:6.3f},{d['diff2']:6.3f})|{d['name']}</div>" for d in report_hold]
+
+    # combine reports
+    private_report='<b>买入:</b>'+'\n'.join(report_buy_html) + '<b>卖出:</b>'+'\n'.join(private_report_sell_html) + '<b>观望:</b>'+'\n'.join(report_hold_html)
+    public_report='<b>买入:</b>'+'\n'.join(report_buy_html) + '<b>卖出:</b>'+'\n'.join(report_sell_html) + '<b>观望:</b>'+'\n'.join(report_hold_html)
+    return private_report, public_report
+
+
+def get_receivers():
+    cnx = mysql.connector.connect(host="127.0.0.1", port=3306, db='AntFund', user="root",password="xxxxxx")
+    cur = cnx.cursor()
+    cur.execute('SELECT email FROM UserInfo')
+    receivers = list(*zip(*cur.fetchall()))
+    cnx.close()
+    return receivers
+
+def send_mail(report, receivers):
+    sender = 'gewei@pku.edu.cn'
+
+    msg = MIMEText(report, 'html')
+    msg['From'] = f'Wei Ge<{sender}>'  # Wei Ge表示显示的名字
+    msg['To'] = ';'.join(receivers)
+    msg['Subject'] = f"Fund Report: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+
+    try:
+        mail_server = smtplib.SMTP_SSL('mail.pku.edu.cn', 465)
+
+        user_name = sender
+        user_pwd = 'Grey631331'
+        mail_server.login(user_name, user_pwd)
+
+        mail_server.sendmail(sender, receivers, msg.as_bytes())
+    except Exception as e:
+        print('send mail failed:', e)
+    else:
+        print(f"send mail success! at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+
+def task():
+    chosen_fund_list = get_chosen_funds()
+    forecast_dicts = get_forecast_dicts(chosen_fund_list)
+    analysed_dicts = analyse_dicts(forecast_dicts)
+    to_buy, to_sell, to_hold = seperate_dicts(analysed_dicts)
+    private_report, public_report = generate_report(to_buy, to_sell, to_hold)
+    # send to myself
+    send_mail(private_report, ['gewei@pku.edu.cn',])
+    # send to others
+    send_mail(public_report, get_receivers())
+
+
+
+task_clock = "14:50"
+schedule.every().monday.at(task_clock).do(task)
+schedule.every().tuesday.at(task_clock).do(task)
+schedule.every().wednesday.at(task_clock).do(task)
+schedule.every().thursday.at(task_clock).do(task)
+schedule.every().friday.at(task_clock).do(task)
+
+while True:
+    schedule.run_pending()
+    time.sleep(1)
+```
