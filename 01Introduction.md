@@ -707,3 +707,17 @@ def task():
 if __name__ == "__main__":
     task()
 ```
+
+example: get netvalues from database
+
+```py
+import mysql.connector
+
+def get_netvalues(code):
+    cnx = mysql.connector.connect(host="127.0.0.1", port=3306, db='AntFund', user="root",password="xxxxxxxxxxx")
+    cur = cnx.cursor()
+    cur.execute(f"SELECT * FROM NetValue WHERE code={code}")
+    netvalue_list=eval(cur.fetchone())
+    cur.close()
+    return netvalue_list
+```
