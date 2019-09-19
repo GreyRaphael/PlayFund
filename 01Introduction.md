@@ -686,6 +686,7 @@ pat_equity = re.compile(r'(\d+),"y":(\d+.\d+),"equityReturn":')
 def update_netvalues(code):
     r=requests.get(f'http://fund.eastmoney.com/pingzhongdata/{code}.js').text
     equity = [(item[0][:-3], item[1]) for item in pat_equity.findall(r)]
+    # equity = {item[0][:-3]:item[1] for item in pat_equity.findall(r)}
     equity_str = json.dumps(equity)
     # connct to mysql
     cnx = mysql.connector.connect(host="127.0.0.1", port=3306, db='AntFund', user="root", password="xxxxxx")
@@ -700,7 +701,8 @@ def update_all(code_list):
             executor.submit(update_netvalues, code)
 
 def task():
-    code_list = get_codelist() # 4323
+    code_list = get_codelist()
+    print(len(code_list))
     update_all(code_list)
     print('update success')
 
