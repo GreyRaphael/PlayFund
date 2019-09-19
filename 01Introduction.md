@@ -973,7 +973,6 @@ def task():
     send_mail(public_report, get_receivers())
 
 
-
 task_clock = "14:50"
 schedule.every().monday.at(task_clock).do(task)
 schedule.every().tuesday.at(task_clock).do(task)
